@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حساب الطالب وفرز الأقسام</title>
+<style>
+body{font-family:Tahoma,Arial;background:#f7fafc;padding:18px;color:#111}
+h1{font-size:20px;margin-bottom:12px}
+.box{background:#fff;border:1px solid #ccc;border-radius:10px;padding:12px;margin-bottom:16px}
+label{font-size:13px;display:block;margin:6px 0 2px}
+input,select,button{padding:8px;border:1px solid #aaa;border-radius:6px;width:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+table{width:100%;border-collapse:collapse;background:#fff;margin-top:12px}
+th,td{padding:8px;border:1px solid #e0e0e0;text-align:center}
+th{background:#f0f4f8}.fav{cursor:pointer}.star{color:gold}.small{font-size:12px;padding:6px;width:auto}
+.sad{background:#ffe5e5 !important}
+.happy{background:#e5ffe5 !important}
+.moveBtns button{margin:0 2px;padding:2px 6px;font-size:11px}
+</style>
+</head>
+<body>
+<h1>حساب الطالب وفرز الأقسام</h1>
+
+<div class="box" id="loginBox">
+<h3>تسجيل / دخول</h3>
+<div class="grid">
+<div><label>اسم الطالب</label><input type="text" id="loginName"></div>
+<div><label>رمز الطالب</label><input type="text" id="loginCode"></div>
+</div>
+<button id="loginBtn" style="margin-top:10px">دخول / تسجيل</button>
+</div>
+
+<div class="box" id="studentBox" style="display:none">
+<h3>بيانات الطالب</h3>
+<div class="grid">
+<div><label>فيزياء</label><input type="number" id="phy" min="0" max="100"></div>
+<div><label>كيمياء</label><input type="number" id="chem" min="0" max="100"></div>
+<div><label>أحياء</label><input type="number" id="bio" min="0" max="100"></div>
+<div><label>عربي</label><input type="number" id="arab" min="0" max="100"></div>
+<div><label>Eng</label><input type="number" id="eng" min="0" max="100"></div>
+<div><label>رياضيات</label><input type="number" id="math" min="0" max="100"></div>
+<div><label>كوردي</label><input type="number" id="kur" min="0" max="100"></div>
+</div>
+<button id="calcAvg" style="margin-top:10px">احسب المعدل وفرز الأقسام</button>
+<div style="margin-top:10px">
+<label>معدل الطالب</label>
+<input type="text" id="studentAvgBox" readonly>
+</div>
+<button id="downloadPDF" style="margin-top:10px;display:none">تنزيل PDF</button>
+</div>
+
+<div class="box" id="resultsBox" style="display:none">
+<h3>الأقسام الموصى بها</h3>
+<table id="resultsTable">
+<thead>
+<tr>
+<th>تسلسل</th>
+<th>القسم</th>
+<th>الكلية</th>
+<th>المحافظة</th>
+<th>صباح مجاني</th>
+<th>صباح مدفوع</th>
+<th>مسائي مدفوع</th>
+<th>المعدل المستخدم</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const colleges=['تربية','علوم','تطبيقية','ادارة و اقتصاد','طب'];
+const governorates=['بغداد','البصرة','نينوى','كركوك','النجف','بابل','إربيل'];
+const subjects=['فيزياء','كيمياء','احياء','عربي','eng','رياضيات','كوردي'];
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+
+const departments=[];
+const deptBase=['العلوم','التطبيقات','تكنولوجيا','الأسس','الرياضيات','اللغة','الهندسة','البيولوجي'];
+for(let i=0;i<60;i++){
+  const sub=subjects[rand(0,subjects.length-1)];
+  const base=deptBase[rand(0,deptBase.length-1)];
+  const college=colleges[rand(0,colleges.length-1)];
+  const gov=governorates[rand(0,governorates.length-1)];
+  const name=`${sub} - ${base} ${i+1}`;
+  const free=rand(60,92);
+  const paidMorning=Math.max(50,free-rand(0,6)+rand(-3,4));
+  const paidEvening=Math.max(45,free-rand(2,10));
+  departments.push({id:i+1,name,college,governorate:gov,free,paidMorning,paidEvening});
+}
+
+let currentStudent=null;
+
+document.getElementById('loginBtn').addEventListener('click',()=>{
+  const name=document.getElementById('loginName').value.trim();
+  const code=document.getElementById('loginCode').value.trim();
+  if(!name || !code){alert('الرجاء إدخال الاسم والرمز');return;}
+  const key=name+'_'+code;
+  const data=localStorage.getItem(key);
+  if(data){
+    const obj=JSON.parse(data);
+    subjects.forEach((sub,i)=>{document.getElementById(['phy','chem','bio','arab','eng','math','kur'][i]).value=obj.scores[i];});
+  }
+  currentStudent={name,code,key};
+  document.getElementById('loginBox').style.display='none';
+  document.getElementById('studentBox').style.display='block';
+  document.getElementById('resultsBox').style.display='block';
+});
+
+let studentAvg=0;
+
+function calcAverage(){
+  const vals=['phy','chem','bio','arab','eng','math','kur'].map(id=>+document.getElementById(id).value||0);
+  const weights=[2,1,1,1,1,2,1];
+  const sum=vals.reduce((a,b,i)=>a+b*weights[i],0);
+  const wSum=weights.reduce((a,b)=>a+b,0);
+  studentAvg=Math.round(sum/wSum);
+  document.getElementById('studentAvgBox').value=studentAvg;
+  // حفظ في localStorage
+  const obj={scores:vals,avg:studentAvg};
+  localStorage.setItem(currentStudent.key,JSON.stringify(obj));
+  filterAndRender();
+}
+document.getElementById('calcAvg').addEventListener('click',calcAverage);
+
+function filterAndRender(){
+  let rows=departments.map(d=>({...d}));
+  rows=rows.filter(r=>r.usedAvg===undefined ? true : r.usedAvg<=studentAvg+5 && r.usedAvg>=studentAvg-10);
+  rows.forEach(r=>{r.usedAvg=Math.max(r.free,r.paidMorning,r.paidEvening);});
+  rows.sort((a,b)=>b.usedAvg-a.usedAvg);
+  renderTable(rows);
+  document.getElementById('downloadPDF').style.display='inline-block';
+}
+
+function renderTable(rows){
+  const tbody=document.querySelector('#resultsTable tbody');
+  tbody.innerHTML='';
+  rows.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    tr.className=r.usedAvg>studentAvg?'sad':'happy';
+    tr.innerHTML=`<td>${i+1}</td><td>${r.name}</td><td>${r.college}</td><td>${r.governorate}</td><td>${r.free}</td><td>${r.paidMorning}</td><td>${r.paidEvening}</td><td>${r.usedAvg}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('downloadPDF').addEventListener('click',()=>{
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(14);
+  doc.text(`الطالب: ${currentStudent.name}`,10,10);
+  doc.text(`المعدل: ${studentAvg}`,10,18);
+  doc.text('الأقسام الموصى بها:',10,26);
+  let y=34;
+  const rows=document.querySelectorAll('#resultsTable tbody tr');
+  rows.forEach(r=>{
+    doc.setTextColor(r.classList.contains('happy')?0:255, r.classList.contains('happy')?0:0,0);
+    doc.text(r.children[1].textContent,10,y);
+    doc.text(`الكلية: ${r.children[2].textContent}`,80,y);
+    doc.text(`المعدل: ${r.children[7].textContent}`,150,y);
+    y+=8;
+    if(y>280){doc.addPage();y=10;}
+  });
+  doc.save(`${currentStudent.name}_results.pdf`);
+});
+</script>
+</body>
+</html>
